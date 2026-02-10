@@ -20,78 +20,28 @@
       <!-- Filters Section -->
       <section class="card">
         <h2>Filters</h2>
+        <p class="helper-text">Add filters to narrow down results. All filters use AND logic.</p>
         
-        <div class="filter-group">
-          <label for="controlTitleInput">controlTitle contains (comma-separated):</label>
-          <input 
-            type="text" 
-            id="controlTitleInput" 
-            placeholder="e.g., texture, pattern"
-          >
-          <small>Leave empty to match all</small>
+        <div id="filtersContainer">
+          <!-- Filter rows will be added here dynamically -->
         </div>
 
-        <div class="filter-group">
-          <label>Has property:</label>
-          <div class="checkbox-group">
-            <label class="checkbox-label">
-              <input type="checkbox" name="hasProperty" value="additionalMedia">
-              additionalMedia
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" name="hasProperty" value="isAdditionalMedia">
-              isAdditionalMedia
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" name="hasProperty" value="src">
-              src
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" name="hasProperty" value="fill">
-              fill
-            </label>
-          </div>
-        </div>
-
-        <div class="filter-group">
-          <label for="customPropertyInput">Custom property (comma-separated):</label>
-          <input 
-            type="text" 
-            id="customPropertyInput" 
-            placeholder="e.g., opacity, visible"
-          >
-        </div>
+        <button id="addFilterBtn" class="btn btn-add">+ Add Filter</button>
+        <button id="clearFiltersBtn" class="btn btn-link">Clear filters</button>
       </section>
 
       <!-- Output Columns Section -->
       <section class="card">
         <h2>Output Columns</h2>
-        <div class="checkbox-group">
-          <label class="checkbox-label">
-            <input type="checkbox" name="column" value="controlTitle" checked>
-            controlTitle
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="column" value="type" checked>
-            type
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="column" value="className" checked>
-            className
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="column" value="fileName" checked>
-            fileName
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="column" value="name">
-            name
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="column" value="id">
-            id
-          </label>
-        </div>
+        <p class="helper-text">Enter property names to include in CSV output (comma-separated)</p>
+        
+        <input 
+          type="text" 
+          id="columnsInput" 
+          placeholder="e.g., fileName, conrolTitle, type, className, id, name"
+          value="fileName, conrolTitle, type, className"
+        >
+        <small>Common properties: <span id="commonProperties">loading...</span></small>
       </section>
 
       <!-- Actions -->

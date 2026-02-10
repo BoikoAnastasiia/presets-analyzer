@@ -1,29 +1,183 @@
 // State
 let lastResults = null;
 let lastColumns = null;
+let availableProperties = [];
 
 // DOM Elements
 const refreshBtn = document.getElementById('refreshBtn');
 const statusText = document.getElementById('statusText');
 const searchBtn = document.getElementById('searchBtn');
 const downloadBtn = document.getElementById('downloadBtn');
-const controlTitleInput = document.getElementById('controlTitleInput');
-const customPropertyInput = document.getElementById('customPropertyInput');
+const filtersContainer = document.getElementById('filtersContainer');
+const addFilterBtn = document.getElementById('addFilterBtn');
+const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+const columnsInput = document.getElementById('columnsInput');
+const commonProperties = document.getElementById('commonProperties');
 const tableHead = document.getElementById('tableHead');
 const tableBody = document.getElementById('tableBody');
 const resultCount = document.getElementById('resultCount');
 const previewNote = document.getElementById('previewNote');
 
-// Load status on page load
+// Operators for filters
+const operators = [
+  { value: 'includes', label: 'includes' },
+  { value: 'not_includes', label: 'not includes' },
+  { value: 'equals', label: 'equals' },
+  { value: 'not_equals', label: 'not equals' },
+  { value: 'exists', label: 'exists' },
+  { value: 'not_exists', label: 'not exists' }
+];
+
+// Filter row counter for unique IDs
+let filterCounter = 0;
+
+/**
+ * Create a filter row element
+ */
+function createFilterRow() {
+  const id = ++filterCounter;
+  const row = document.createElement('div');
+  row.className = 'filter-row';
+  row.dataset.filterId = id;
+
+  // Property input with datalist
+  const propertyInput = document.createElement('input');
+  propertyInput.type = 'text';
+  propertyInput.className = 'filter-property';
+  propertyInput.placeholder = 'Property name';
+  propertyInput.setAttribute('list', 'propertiesList');
+
+  // Operator select
+  const operatorSelect = document.createElement('select');
+  operatorSelect.className = 'filter-operator';
+  operators.forEach(op => {
+    const option = document.createElement('option');
+    option.value = op.value;
+    option.textContent = op.label;
+    operatorSelect.appendChild(option);
+  });
+
+  // Value input
+  const valueInput = document.createElement('input');
+  valueInput.type = 'text';
+  valueInput.className = 'filter-value';
+  valueInput.placeholder = 'Value';
+
+  // Hide value input when operator is exists/not_exists
+  operatorSelect.addEventListener('change', () => {
+    const hideValue = ['exists', 'not_exists'].includes(operatorSelect.value);
+    valueInput.style.display = hideValue ? 'none' : 'block';
+  });
+
+  // Remove button
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'btn btn-remove';
+  removeBtn.textContent = '×';
+  removeBtn.title = 'Remove filter';
+  removeBtn.addEventListener('click', () => {
+    row.remove();
+  });
+
+  row.appendChild(propertyInput);
+  row.appendChild(operatorSelect);
+  row.appendChild(valueInput);
+  row.appendChild(removeBtn);
+
+  return row;
+}
+
+/**
+ * Add a new filter row
+ */
+function addFilter() {
+  const row = createFilterRow();
+  filtersContainer.appendChild(row);
+}
+
+/**
+ * Clear all filters
+ */
+function clearFilters() {
+  filtersContainer.innerHTML = '';
+}
+
+/**
+ * Get filters from the UI
+ */
+function getFilters() {
+  const rows = filtersContainer.querySelectorAll('.filter-row');
+  const filters = [];
+
+  rows.forEach(row => {
+    const property = row.querySelector('.filter-property').value.trim();
+    const operator = row.querySelector('.filter-operator').value;
+    const value = row.querySelector('.filter-value').value.trim();
+
+    if (property) {
+      filters.push({ property, operator, value });
+    }
+  });
+
+  return filters;
+}
+
+/**
+ * Get columns from the input
+ */
+function getColumns() {
+  const value = columnsInput.value.trim();
+  if (!value) return [];
+  
+  return value.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+/**
+ * Load status and properties
+ */
 async function loadStatus() {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
     updateStatusDisplay(data);
+    
+    // Store available properties
+    availableProperties = data.properties || [];
+    updatePropertiesDatalist();
+    updateCommonPropertiesHint();
   } catch (error) {
     statusText.textContent = 'Error loading status';
     console.error(error);
   }
+}
+
+/**
+ * Update the datalist with available properties
+ */
+function updatePropertiesDatalist() {
+  // Create or update datalist
+  let datalist = document.getElementById('propertiesList');
+  if (!datalist) {
+    datalist = document.createElement('datalist');
+    datalist.id = 'propertiesList';
+    document.body.appendChild(datalist);
+  }
+
+  datalist.innerHTML = '';
+  availableProperties.forEach(prop => {
+    const option = document.createElement('option');
+    option.value = prop;
+    datalist.appendChild(option);
+  });
+}
+
+/**
+ * Show common properties as hint
+ */
+function updateCommonPropertiesHint() {
+  const common = ['fileName', 'conrolTitle', 'controlTitle', 'type', 'className', 'id', 'name', 'src', 'fill', 'isAdditionalMedia'];
+  const available = common.filter(p => availableProperties.includes(p));
+  commonProperties.textContent = available.join(', ');
 }
 
 function updateStatusDisplay(data) {
@@ -38,7 +192,9 @@ function updateStatusDisplay(data) {
   statusText.textContent = `${data.fileCount.toLocaleString()} files | ${data.objectCount.toLocaleString()} objects | Loaded: ${formatted}`;
 }
 
-// Refresh data
+/**
+ * Refresh data from server
+ */
 async function refreshData() {
   refreshBtn.disabled = true;
   statusText.textContent = 'Refreshing...';
@@ -47,6 +203,10 @@ async function refreshData() {
     const res = await fetch('/api/refresh', { method: 'POST' });
     const data = await res.json();
     updateStatusDisplay(data);
+    
+    availableProperties = data.properties || [];
+    updatePropertiesDatalist();
+    updateCommonPropertiesHint();
   } catch (error) {
     statusText.textContent = 'Error refreshing data';
     console.error(error);
@@ -55,47 +215,15 @@ async function refreshData() {
   }
 }
 
-// Get selected filters
-function getFilters() {
-  const filters = {};
-
-  // controlTitle contains
-  const controlTitleValue = controlTitleInput.value.trim();
-  if (controlTitleValue) {
-    filters.controlTitleContains = controlTitleValue.split(',').map(s => s.trim()).filter(Boolean);
-  }
-
-  // Has property checkboxes
-  const propertyCheckboxes = document.querySelectorAll('input[name="hasProperty"]:checked');
-  const properties = Array.from(propertyCheckboxes).map(cb => cb.value);
-  
-  // Custom properties
-  const customPropertyValue = customPropertyInput.value.trim();
-  if (customPropertyValue) {
-    const customProps = customPropertyValue.split(',').map(s => s.trim()).filter(Boolean);
-    properties.push(...customProps);
-  }
-
-  if (properties.length > 0) {
-    filters.hasProperty = properties;
-  }
-
-  return filters;
-}
-
-// Get selected columns
-function getColumns() {
-  const columnCheckboxes = document.querySelectorAll('input[name="column"]:checked');
-  return Array.from(columnCheckboxes).map(cb => cb.value);
-}
-
-// Perform search
+/**
+ * Perform search
+ */
 async function search() {
   const filters = getFilters();
   const columns = getColumns();
 
   if (columns.length === 0) {
-    alert('Please select at least one output column');
+    alert('Please enter at least one output column');
     return;
   }
 
@@ -125,7 +253,9 @@ async function search() {
   }
 }
 
-// Display results in table
+/**
+ * Display results in table
+ */
 function displayResults(data) {
   const { results, columns, count } = data;
 
@@ -158,8 +288,9 @@ function displayResults(data) {
     const tr = document.createElement('tr');
     for (const col of columns) {
       const td = document.createElement('td');
-      td.textContent = row[col] ?? '';
-      td.title = row[col] ?? ''; // Show full text on hover
+      const value = row[col];
+      td.textContent = value ?? '';
+      td.title = value ?? ''; // Show full text on hover
       tr.appendChild(td);
     }
     tableBody.appendChild(tr);
@@ -173,11 +304,12 @@ function displayResults(data) {
   }
 }
 
-// Download CSV
+/**
+ * Download CSV
+ */
 function downloadCSV() {
   if (!lastResults || !lastColumns) return;
 
-  // Build CSV content
   const escapeCSV = (value) => {
     if (value === null || value === undefined) return '';
     const str = String(value);
@@ -194,7 +326,6 @@ function downloadCSV() {
     csv += values.join(',') + '\n';
   }
 
-  // Create download
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -206,16 +337,17 @@ function downloadCSV() {
 
 // Event listeners
 refreshBtn.addEventListener('click', refreshData);
+addFilterBtn.addEventListener('click', addFilter);
+clearFiltersBtn.addEventListener('click', clearFilters);
 searchBtn.addEventListener('click', search);
 downloadBtn.addEventListener('click', downloadCSV);
 
-// Allow Enter key to trigger search
-controlTitleInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') search();
-});
-customPropertyInput.addEventListener('keypress', (e) => {
+// Enter key triggers search in columns input
+columnsInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') search();
 });
 
-// Load status on page load
+// Initialize
 loadStatus();
+// Add one empty filter row by default
+addFilter();

@@ -53,69 +53,136 @@ header h1 {
 .card h2 {
   font-size: 18px;
   color: #1a1a2e;
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #eee;
+  margin-bottom: 8px;
 }
 
-.filter-group {
-  margin-bottom: 16px;
-}
-
-.filter-group label {
-  display: block;
-  font-weight: 500;
-  margin-bottom: 6px;
-  color: #444;
-}
-
-.filter-group small {
+.helper-text {
   color: #888;
-  font-size: 12px;
+  font-size: 13px;
+  margin-bottom: 16px;
 }
 
-input[type="text"] {
+/* Filter rows - Retool style */
+#filtersContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: #f8f9fc;
+  border-radius: 6px;
+  border: 1px solid #e8ecf3;
+}
+
+.filter-property {
+  flex: 1;
+  min-width: 150px;
+}
+
+.filter-operator {
+  width: 130px;
+}
+
+.filter-value {
+  flex: 1;
+  min-width: 150px;
+}
+
+.filter-row input,
+.filter-row select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.filter-row input:focus,
+.filter-row select:focus {
+  outline: none;
+  border-color: #4a6cf7;
+}
+
+.btn-remove {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 18px;
+  color: #999;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-remove:hover {
+  background: #fee;
+  border-color: #e55;
+  color: #c33;
+}
+
+.btn-add {
+  background: #f0f4ff;
+  color: #4a6cf7;
+  border: 1px dashed #4a6cf7;
+  padding: 8px 16px;
+  font-size: 14px;
+  margin-right: 12px;
+}
+
+.btn-add:hover {
+  background: #e0e8ff;
+}
+
+.btn-link {
+  background: transparent;
+  color: #e55;
+  border: none;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+/* Output columns */
+#columnsInput {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid #ddd;
   border-radius: 6px;
   font-size: 14px;
-  transition: border-color 0.2s;
+  margin-bottom: 8px;
 }
 
-input[type="text"]:focus {
+#columnsInput:focus {
   outline: none;
   border-color: #4a6cf7;
 }
 
-.checkbox-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+small {
+  color: #888;
+  font-size: 12px;
 }
 
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: normal;
-  cursor: pointer;
-  padding: 6px 12px;
-  background: #f5f7fa;
-  border-radius: 4px;
-  transition: background 0.2s;
+#commonProperties {
+  color: #4a6cf7;
+  font-family: monospace;
 }
 
-.checkbox-label:hover {
-  background: #e8ecf3;
-}
-
-.checkbox-label input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-
+/* Actions */
 .actions {
   display: flex;
   gap: 12px;
@@ -164,6 +231,7 @@ input[type="text"]:focus {
   background: #1db954;
 }
 
+/* Table */
 .table-container {
   overflow-x: auto;
   max-height: 500px;
@@ -218,15 +286,26 @@ td {
   font-style: italic;
 }
 
-/* Loading state */
-.loading {
-  opacity: 0.6;
-  pointer-events: none;
-}
-
-/* Empty state */
 .empty-state {
   text-align: center;
   padding: 40px;
   color: #888;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .filter-row {
+    flex-wrap: wrap;
+  }
+  
+  .filter-property,
+  .filter-operator,
+  .filter-value {
+    flex: 1 1 100%;
+    min-width: unset;
+  }
+  
+  .filter-operator {
+    width: 100%;
+  }
 }
