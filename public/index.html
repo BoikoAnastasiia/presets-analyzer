@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preset Analyzer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Preset Analyzer</h1>
+      <div class="status-bar">
+        <button id="refreshBtn" class="btn btn-secondary">🔄 Refresh Data</button>
+        <span id="statusText">Loading...</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- Filters Section -->
+      <section class="card">
+        <h2>Filters</h2>
+        
+        <div class="filter-group">
+          <label for="controlTitleInput">controlTitle contains (comma-separated):</label>
+          <input 
+            type="text" 
+            id="controlTitleInput" 
+            placeholder="e.g., texture, pattern"
+          >
+          <small>Leave empty to match all</small>
+        </div>
+
+        <div class="filter-group">
+          <label>Has property:</label>
+          <div class="checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" name="hasProperty" value="additionalMedia">
+              additionalMedia
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="hasProperty" value="isAdditionalMedia">
+              isAdditionalMedia
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="hasProperty" value="src">
+              src
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="hasProperty" value="fill">
+              fill
+            </label>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <label for="customPropertyInput">Custom property (comma-separated):</label>
+          <input 
+            type="text" 
+            id="customPropertyInput" 
+            placeholder="e.g., opacity, visible"
+          >
+        </div>
+      </section>
+
+      <!-- Output Columns Section -->
+      <section class="card">
+        <h2>Output Columns</h2>
+        <div class="checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" name="column" value="controlTitle" checked>
+            controlTitle
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="column" value="type" checked>
+            type
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="column" value="className" checked>
+            className
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="column" value="fileName" checked>
+            fileName
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="column" value="name">
+            name
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="column" value="id">
+            id
+          </label>
+        </div>
+      </section>
+
+      <!-- Actions -->
+      <div class="actions">
+        <button id="searchBtn" class="btn btn-primary">🔍 Search</button>
+        <button id="downloadBtn" class="btn btn-success" disabled>📥 Download CSV</button>
+      </div>
+
+      <!-- Results Section -->
+      <section class="card">
+        <h2>Results <span id="resultCount"></span></h2>
+        <div class="table-container">
+          <table id="resultsTable">
+            <thead id="tableHead"></thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+        <p id="previewNote" class="preview-note"></p>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
