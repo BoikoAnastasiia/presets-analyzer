@@ -1,16 +1,20 @@
 require('dotenv').config();
 
 const express = require('express');
+const { MongoClient } = require('mongodb');
 const { S3Client, ListObjectsV2Command, GetObjectCommand } = require('@aws-sdk/client-s3');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// MongoDB setup
+const mongoClient = new MongoClient(process.env.MONGODB_URI);
+let db;
+
 // S3 Configuration
 const S3_BUCKET = 'gipper-static-assets';
 const S3_PREFIX = 'default_presets_update/';
 
-// Initialize S3 client
 const s3Client = new S3Client({ 
   region: process.env.AWS_REGION || 'us-east-1',
   credentials: process.env.AWS_ACCESS_KEY_ID ? {
@@ -19,18 +23,9 @@ const s3Client = new S3Client({
   } : undefined
 });
 
-// Serve static files from public folder
+// Middleware
 app.use(express.static('public'));
 app.use(express.json());
-
-// Cache for parsed data
-let cache = {
-  objects: [],
-  fileCount: 0,
-  timestamp: null,
-  loading: false,
-  error: null
-};
 
 /**
  * Extract objects from a preset JSON
@@ -69,217 +64,268 @@ function extractObjects(json, fileName) {
 }
 
 /**
- * Load all presets from S3
+ * List S3 files with metadata
  */
-async function loadFromS3() {
-  if (cache.loading) {
-    console.log('Already loading, skipping...');
-    return;
-  }
+async function listS3Files() {
+  const files = [];
+  let continuationToken = null;
 
-  cache.loading = true;
-  cache.error = null;
-  console.log('=== Loading presets from S3 ===');
+  do {
+    const command = new ListObjectsV2Command({
+      Bucket: S3_BUCKET,
+      Prefix: S3_PREFIX,
+      ContinuationToken: continuationToken
+    });
+
+    const response = await s3Client.send(command);
+
+    for (const obj of response.Contents || []) {
+      const key = obj.Key;
+      const fileName = key.replace(S3_PREFIX, '');
+
+      if (
+        fileName.startsWith('template_') &&
+        !fileName.includes('school_') &&
+        fileName.endsWith('.json')
+      ) {
+        files.push({
+          key,
+          fileName,
+          lastModified: obj.LastModified.toISOString()
+        });
+      }
+    }
+
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : null;
+  } while (continuationToken);
+
+  return files;
+}
+
+/**
+ * Download and parse a file from S3
+ */
+async function downloadFromS3(key) {
+  const command = new GetObjectCommand({
+    Bucket: S3_BUCKET,
+    Key: key
+  });
+
+  const response = await s3Client.send(command);
+  const bodyString = await response.Body.transformToString();
+  return JSON.parse(bodyString);
+}
+
+/**
+ * Sync from S3 to MongoDB (incremental)
+ */
+async function syncFromS3() {
+  console.log('=== Starting S3 to MongoDB Sync ===');
   const startTime = Date.now();
 
-  try {
-    // List all matching files
-    const files = [];
-    let continuationToken = null;
+  // Get S3 files
+  console.log('Listing S3 files...');
+  const s3Files = await listS3Files();
+  console.log(`Found ${s3Files.length} files in S3`);
 
-    do {
-      const command = new ListObjectsV2Command({
-        Bucket: S3_BUCKET,
-        Prefix: S3_PREFIX,
-        ContinuationToken: continuationToken
-      });
+  // Get existing file metadata from MongoDB
+  const existingFiles = await db.collection('fileMetadata').find({}).toArray();
+  const existingMap = new Map(existingFiles.map(f => [f.fileName, f]));
 
-      const response = await s3Client.send(command);
+  // Find files to sync
+  const filesToSync = [];
+  const s3FileNames = new Set();
 
-      for (const obj of response.Contents || []) {
-        const key = obj.Key;
-        const fileName = key.replace(S3_PREFIX, '');
-
-        // Filter: template_*, exclude school_*, .json only
-        if (
-          fileName.startsWith('template_') &&
-          !fileName.includes('school_') &&
-          fileName.endsWith('.json')
-        ) {
-          files.push({ key, fileName });
-        }
-      }
-
-      continuationToken = response.IsTruncated ? response.NextContinuationToken : null;
-      console.log(`  Found ${files.length} matching files...`);
-    } while (continuationToken);
-
-    console.log(`Total: ${files.length} files to process`);
-
-    // Download and parse all files
-    const allObjects = [];
-    let processed = 0;
-
-    for (const file of files) {
-      try {
-        const command = new GetObjectCommand({
-          Bucket: S3_BUCKET,
-          Key: file.key
-        });
-
-        const response = await s3Client.send(command);
-        const bodyString = await response.Body.transformToString();
-        const json = JSON.parse(bodyString);
-        const objects = extractObjects(json, file.fileName);
-        allObjects.push(...objects);
-
-        processed++;
-        if (processed % 500 === 0) {
-          console.log(`  Processed ${processed}/${files.length} files (${allObjects.length} objects)...`);
-        }
-      } catch (error) {
-        console.error(`Error processing ${file.fileName}:`, error.message);
-      }
-    }
-
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`\n✓ Loaded ${allObjects.length} objects from ${files.length} files in ${elapsed}s`);
-
-    // Update cache
-    cache.objects = allObjects;
-    cache.fileCount = files.length;
-    cache.timestamp = new Date().toISOString();
-    cache.loading = false;
-
-  } catch (error) {
-    console.error('Failed to load from S3:', error);
-    cache.error = error.message;
-    cache.loading = false;
-    throw error;
-  }
-}
-
-/**
- * Get all unique property names from the objects
- */
-function getAllPropertyNames(objects) {
-  const propertySet = new Set();
-  for (const obj of objects) {
-    for (const key of Object.keys(obj)) {
-      propertySet.add(key);
+  for (const s3File of s3Files) {
+    s3FileNames.add(s3File.fileName);
+    const existing = existingMap.get(s3File.fileName);
+    
+    if (!existing || existing.lastModified !== s3File.lastModified) {
+      filesToSync.push(s3File);
     }
   }
-  return Array.from(propertySet).sort();
-}
 
-/**
- * Filter objects based on filters
- */
-function filterObjects(objects, filters) {
-  if (!filters || filters.length === 0) {
-    return objects;
+  // Find files to delete (in DB but not in S3)
+  const filesToDelete = existingFiles
+    .filter(f => !s3FileNames.has(f.fileName))
+    .map(f => f.fileName);
+
+  console.log(`Files to sync: ${filesToSync.length}`);
+  console.log(`Files to delete: ${filesToDelete.length}`);
+  console.log(`Files unchanged: ${s3Files.length - filesToSync.length}`);
+
+  // Delete removed files
+  if (filesToDelete.length > 0) {
+    await db.collection('objects').deleteMany({ fileName: { $in: filesToDelete } });
+    await db.collection('fileMetadata').deleteMany({ fileName: { $in: filesToDelete } });
+    console.log(`Deleted ${filesToDelete.length} files`);
   }
 
-  const validFilters = filters.filter(f => f.property && f.value);
-  if (validFilters.length === 0) {
-    return objects;
-  }
+  // Process new/changed files
+  let processedCount = 0;
+  let totalObjects = 0;
 
-  return objects.filter(obj => {
-    return validFilters.every(filter => {
-      const { property, value } = filter;
-      const objValue = obj[property];
+  for (const file of filesToSync) {
+    try {
+      // Delete existing objects for this file
+      await db.collection('objects').deleteMany({ fileName: file.fileName });
 
-      if (objValue === null || objValue === undefined) {
-        return false;
+      // Download and parse
+      const json = await downloadFromS3(file.key);
+      const objects = extractObjects(json, file.fileName);
+
+      // Insert objects
+      if (objects.length > 0) {
+        await db.collection('objects').insertMany(objects);
       }
 
-      const strValue = String(objValue).toLowerCase();
-      const searchValue = value.toLowerCase();
+      // Update file metadata
+      await db.collection('fileMetadata').updateOne(
+        { fileName: file.fileName },
+        { 
+          $set: { 
+            fileName: file.fileName,
+            lastModified: file.lastModified,
+            objectCount: objects.length,
+            syncedAt: new Date().toISOString()
+          }
+        },
+        { upsert: true }
+      );
 
-      return strValue.includes(searchValue);
-    });
-  });
-}
+      totalObjects += objects.length;
+      processedCount++;
 
-/**
- * Select specific columns from objects
- */
-function selectColumns(objects, columns) {
-  if (!columns || columns.length === 0) {
-    return objects;
+      if (processedCount % 100 === 0) {
+        console.log(`Processed ${processedCount}/${filesToSync.length} files...`);
+      }
+    } catch (error) {
+      console.error(`Error processing ${file.fileName}:`, error.message);
+    }
   }
 
-  return objects.map(obj => {
-    const row = {};
-    for (const col of columns) {
-      row[col] = obj[col];
-    }
-    return row;
-  });
+  // Update sync metadata
+  const objectCount = await db.collection('objects').countDocuments();
+  const fileCount = await db.collection('fileMetadata').countDocuments();
+
+  await db.collection('metadata').updateOne(
+    { _id: 'sync' },
+    { 
+      $set: { 
+        lastSync: new Date().toISOString(),
+        fileCount,
+        objectCount
+      }
+    },
+    { upsert: true }
+  );
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+  console.log(`\n✓ Sync complete in ${elapsed}s`);
+  console.log(`  Processed: ${processedCount} files, ${totalObjects} objects`);
+  console.log(`  Total in DB: ${fileCount} files, ${objectCount} objects`);
+
+  return { processedCount, totalObjects, fileCount, objectCount };
 }
 
 // API: Get status
-app.get('/api/status', (req, res) => {
-  res.json({
-    objectCount: cache.objects.length,
-    fileCount: cache.fileCount,
-    lastLoaded: cache.timestamp,
-    loading: cache.loading,
-    error: cache.error,
-    properties: cache.objects.length > 0 ? getAllPropertyNames(cache.objects) : []
-  });
-});
-
-// API: Refresh/reload data from S3
-app.post('/api/refresh', async (req, res) => {
+app.get('/api/status', async (req, res) => {
   try {
-    await loadFromS3();
+    const metadata = await db.collection('metadata').findOne({ _id: 'sync' });
+    
     res.json({
-      objectCount: cache.objects.length,
-      fileCount: cache.fileCount,
-      lastLoaded: cache.timestamp,
-      properties: getAllPropertyNames(cache.objects)
+      fileCount: metadata?.fileCount || 0,
+      objectCount: metadata?.objectCount || 0,
+      lastSync: metadata?.lastSync || null
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// API: Search objects
-app.post('/api/search', (req, res) => {
-  const { filters, columns } = req.body;
-
-  if (cache.objects.length === 0) {
-    return res.status(503).json({ error: 'Data not loaded yet. Please wait or call /api/refresh' });
-  }
-
-  // Apply filters
-  let results = filterObjects(cache.objects, filters);
-
-  // Select columns
-  const selectedColumns = columns && columns.length > 0 
-    ? columns 
-    : ['fileName', 'conrolTitle', 'type', 'className'];
-  
-  const mappedResults = selectColumns(results, selectedColumns);
-
-  res.json({
-    count: mappedResults.length,
-    columns: selectedColumns,
-    results: mappedResults
-  });
-});
-
-// Start server and load data
-app.listen(PORT, async () => {
-  console.log(`\n🚀 Preset Analyzer running at http://localhost:${PORT}\n`);
-  
-  // Load data from S3 on startup
+// API: Sync from S3
+app.post('/api/sync', async (req, res) => {
   try {
-    await loadFromS3();
+    const result = await syncFromS3();
+    
+    res.json({
+      success: true,
+      ...result,
+      lastSync: new Date().toISOString()
+    });
   } catch (error) {
-    console.error('Initial S3 load failed. Server running but data not available.');
-    console.error('Set AWS credentials and call POST /api/refresh to retry.');
+    console.error('Sync error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
+
+// API: Search objects
+app.post('/api/search', async (req, res) => {
+  try {
+    const { filters, columns } = req.body;
+
+    // Build MongoDB query from filters
+    const query = {};
+    
+    if (filters && filters.length > 0) {
+      for (const filter of filters) {
+        if (filter.property && filter.value) {
+          // Case-insensitive contains
+          query[filter.property] = { $regex: filter.value, $options: 'i' };
+        }
+      }
+    }
+
+    // Select columns (projection)
+    const selectedColumns = columns && columns.length > 0 
+      ? columns 
+      : ['fileName', 'conrolTitle', 'type', 'className'];
+    
+    const projection = { _id: 0 };
+    for (const col of selectedColumns) {
+      projection[col] = 1;
+    }
+
+    // Execute query
+    const results = await db.collection('objects')
+      .find(query)
+      .project(projection)
+      .limit(10000) // Safety limit
+      .toArray();
+
+    res.json({
+      count: results.length,
+      columns: selectedColumns,
+      results
+    });
+  } catch (error) {
+    console.error('Search error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Start server
+async function start() {
+  try {
+    // Connect to MongoDB
+    console.log('Connecting to MongoDB...');
+    await mongoClient.connect();
+    db = mongoClient.db('presets');
+    console.log('✓ Connected to MongoDB');
+
+    // Create indexes for faster search
+    await db.collection('objects').createIndex({ fileName: 1 });
+    await db.collection('objects').createIndex({ conrolTitle: 'text', type: 'text', className: 'text' });
+    console.log('✓ Indexes created');
+
+    // Start server
+    app.listen(PORT, () => {
+      console.log(`\n🚀 Preset Analyzer running at http://localhost:${PORT}\n`);
+    });
+  } catch (error) {
+    console.error('Failed to start:', error);
+    process.exit(1);
+  }
+}
+
+start();

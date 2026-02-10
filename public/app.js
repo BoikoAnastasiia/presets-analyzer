@@ -103,25 +103,6 @@ function getColumns() {
 }
 
 /**
- * Update the datalist with available properties
- */
-function updatePropertiesDatalist(properties) {
-  let datalist = document.getElementById('propertiesList');
-  if (!datalist) {
-    datalist = document.createElement('datalist');
-    datalist.id = 'propertiesList';
-    document.body.appendChild(datalist);
-  }
-
-  datalist.innerHTML = '';
-  properties.forEach(prop => {
-    const option = document.createElement('option');
-    option.value = prop;
-    datalist.appendChild(option);
-  });
-}
-
-/**
  * Load status from server
  */
 async function loadStatus() {
@@ -130,13 +111,6 @@ async function loadStatus() {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
-    
-    if (data.loading) {
-      statusText.textContent = 'Loading data from S3... Please wait.';
-      // Poll until loaded
-      setTimeout(loadStatus, 3000);
-      return;
-    }
 
     if (data.error) {
       statusText.textContent = `Error: ${data.error}`;
@@ -144,11 +118,11 @@ async function loadStatus() {
     }
 
     if (data.objectCount === 0) {
-      statusText.textContent = 'No data loaded. Click Refresh to load from S3.';
+      statusText.textContent = 'No data in database. Click "Sync from S3" to load data.';
       return;
     }
 
-    const date = new Date(data.lastLoaded);
+    const date = new Date(data.lastSync);
     const formatted = date.toLocaleDateString('en-US', {
       month: 'long',
       day: 'numeric',
@@ -156,15 +130,7 @@ async function loadStatus() {
       hour: '2-digit',
       minute: '2-digit'
     });
-    statusText.textContent = `${data.fileCount.toLocaleString()} files | ${data.objectCount.toLocaleString()} objects | Loaded: ${formatted}`;
-
-    // Update properties datalist
-    if (data.properties && data.properties.length > 0) {
-      updatePropertiesDatalist(data.properties);
-      const common = ['fileName', 'conrolTitle', 'type', 'className', 'id', 'name', 'src'];
-      const available = common.filter(p => data.properties.includes(p));
-      commonProperties.textContent = available.join(', ');
-    }
+    statusText.textContent = `${data.fileCount.toLocaleString()} files | ${data.objectCount.toLocaleString()} objects | Last sync: ${formatted}`;
   } catch (error) {
     console.error('Error loading status:', error);
     statusText.textContent = 'Error connecting to server';
@@ -172,14 +138,15 @@ async function loadStatus() {
 }
 
 /**
- * Refresh data from S3
+ * Sync data from S3 to MongoDB
  */
-async function refreshData() {
+async function syncData() {
   refreshBtn.disabled = true;
-  statusText.textContent = 'Refreshing data from S3... This may take a few minutes.';
+  refreshBtn.textContent = '⏳ Syncing...';
+  statusText.textContent = 'Syncing from S3... This may take several minutes for initial sync.';
   
   try {
-    const res = await fetch('/api/refresh', { method: 'POST' });
+    const res = await fetch('/api/sync', { method: 'POST' });
     const data = await res.json();
 
     if (data.error) {
@@ -187,7 +154,7 @@ async function refreshData() {
       return;
     }
 
-    const date = new Date(data.lastLoaded);
+    const date = new Date(data.lastSync);
     const formatted = date.toLocaleDateString('en-US', {
       month: 'long',
       day: 'numeric',
@@ -195,16 +162,19 @@ async function refreshData() {
       hour: '2-digit',
       minute: '2-digit'
     });
-    statusText.textContent = `${data.fileCount.toLocaleString()} files | ${data.objectCount.toLocaleString()} objects | Loaded: ${formatted}`;
-
-    if (data.properties) {
-      updatePropertiesDatalist(data.properties);
+    statusText.textContent = `${data.fileCount.toLocaleString()} files | ${data.objectCount.toLocaleString()} objects | Last sync: ${formatted}`;
+    
+    if (data.processedCount > 0) {
+      alert(`Sync complete!\n\nProcessed: ${data.processedCount} files\nNew objects: ${data.totalObjects}\nTotal in DB: ${data.objectCount}`);
+    } else {
+      alert('Sync complete! No changes detected.');
     }
   } catch (error) {
-    console.error('Error refreshing:', error);
-    statusText.textContent = 'Error refreshing data';
+    console.error('Error syncing:', error);
+    statusText.textContent = 'Error syncing data';
   } finally {
     refreshBtn.disabled = false;
+    refreshBtn.textContent = '🔄 Sync from S3';
   }
 }
 
@@ -333,7 +303,7 @@ function downloadCSV() {
 }
 
 // Event listeners
-refreshBtn.addEventListener('click', refreshData);
+refreshBtn.addEventListener('click', syncData);
 addFilterBtn.addEventListener('click', addFilter);
 clearFiltersBtn.addEventListener('click', clearFilters);
 searchBtn.addEventListener('click', search);
