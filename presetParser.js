@@ -10,13 +10,6 @@ function traverseObjects(objects, fileName, results) {
 
   for (const obj of objects) {
     // Flatten the object: fileName + all properties from the object
-    const entry = {
-      fileName,
-      ...obj
-    };
-
-    // Remove nested objects/arrays for cleaner CSV output
-    // but keep track of which properties exist
     const cleanEntry = { fileName };
     
     for (const [key, value] of Object.entries(obj)) {
@@ -100,8 +93,9 @@ function getAllPropertyNames(objects) {
 
 /**
  * Filter objects based on dynamic filters
+ * All filters use "includes" logic (case-insensitive)
  * @param {Array} objects - All objects
- * @param {Array} filters - Array of { property, operator, value }
+ * @param {Array} filters - Array of { property, value }
  * @returns {Array}
  */
 function filterObjects(objects, filters) {
@@ -109,42 +103,30 @@ function filterObjects(objects, filters) {
     return objects;
   }
 
+  // Filter out empty/invalid filters first
+  const validFilters = filters.filter(f => f.property && f.value);
+  
+  if (validFilters.length === 0) {
+    return objects;
+  }
+
   return objects.filter(obj => {
     // All filters must match (AND logic)
-    return filters.every(filter => {
-      const { property, operator, value } = filter;
-      
-      if (!property || !value) return true; // Skip empty filters
+    return validFilters.every(filter => {
+      const { property, value } = filter;
       
       const objValue = obj[property];
       
-      // Handle null/undefined
+      // If the object doesn't have this property, it doesn't match
       if (objValue === null || objValue === undefined) {
-        if (operator === 'not_includes' || operator === 'not_equals') {
-          return true; // null doesn't include/equal anything
-        }
         return false;
       }
 
+      // Convert to string and do case-insensitive includes check
       const strValue = String(objValue).toLowerCase();
       const searchValue = value.toLowerCase();
 
-      switch (operator) {
-        case 'includes':
-          return strValue.includes(searchValue);
-        case 'not_includes':
-          return !strValue.includes(searchValue);
-        case 'equals':
-          return strValue === searchValue;
-        case 'not_equals':
-          return strValue !== searchValue;
-        case 'exists':
-          return obj.hasOwnProperty(property);
-        case 'not_exists':
-          return !obj.hasOwnProperty(property);
-        default:
-          return true;
-      }
+      return strValue.includes(searchValue);
     });
   });
 }

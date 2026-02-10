@@ -58,8 +58,12 @@ app.post('/api/search', (req, res) => {
   const { filters, columns } = req.body;
   const data = getData();
 
+  console.log('Search request - filters:', JSON.stringify(filters));
+
   // Apply filters
   let results = filterObjects(data.objects, filters);
+
+  console.log(`Filtered: ${data.objects.length} -> ${results.length} objects`);
 
   // Select columns
   const selectedColumns = columns && columns.length > 0 

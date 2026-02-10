@@ -18,16 +18,6 @@ const tableBody = document.getElementById('tableBody');
 const resultCount = document.getElementById('resultCount');
 const previewNote = document.getElementById('previewNote');
 
-// Operators for filters
-const operators = [
-  { value: 'includes', label: 'includes' },
-  { value: 'not_includes', label: 'not includes' },
-  { value: 'equals', label: 'equals' },
-  { value: 'not_equals', label: 'not equals' },
-  { value: 'exists', label: 'exists' },
-  { value: 'not_exists', label: 'not exists' }
-];
-
 // Filter row counter for unique IDs
 let filterCounter = 0;
 
@@ -44,30 +34,19 @@ function createFilterRow() {
   const propertyInput = document.createElement('input');
   propertyInput.type = 'text';
   propertyInput.className = 'filter-property';
-  propertyInput.placeholder = 'Property name';
+  propertyInput.placeholder = 'Property name (e.g., src, conrolTitle)';
   propertyInput.setAttribute('list', 'propertiesList');
 
-  // Operator select
-  const operatorSelect = document.createElement('select');
-  operatorSelect.className = 'filter-operator';
-  operators.forEach(op => {
-    const option = document.createElement('option');
-    option.value = op.value;
-    option.textContent = op.label;
-    operatorSelect.appendChild(option);
-  });
+  // "includes" label
+  const includesLabel = document.createElement('span');
+  includesLabel.className = 'filter-operator-label';
+  includesLabel.textContent = 'includes';
 
   // Value input
   const valueInput = document.createElement('input');
   valueInput.type = 'text';
   valueInput.className = 'filter-value';
-  valueInput.placeholder = 'Value';
-
-  // Hide value input when operator is exists/not_exists
-  operatorSelect.addEventListener('change', () => {
-    const hideValue = ['exists', 'not_exists'].includes(operatorSelect.value);
-    valueInput.style.display = hideValue ? 'none' : 'block';
-  });
+  valueInput.placeholder = 'Value to search for';
 
   // Remove button
   const removeBtn = document.createElement('button');
@@ -80,7 +59,7 @@ function createFilterRow() {
   });
 
   row.appendChild(propertyInput);
-  row.appendChild(operatorSelect);
+  row.appendChild(includesLabel);
   row.appendChild(valueInput);
   row.appendChild(removeBtn);
 
@@ -111,11 +90,10 @@ function getFilters() {
 
   rows.forEach(row => {
     const property = row.querySelector('.filter-property').value.trim();
-    const operator = row.querySelector('.filter-operator').value;
     const value = row.querySelector('.filter-value').value.trim();
 
-    if (property) {
-      filters.push({ property, operator, value });
+    if (property && value) {
+      filters.push({ property, value });
     }
   });
 

@@ -62,7 +62,7 @@ header h1 {
   margin-bottom: 16px;
 }
 
-/* Filter rows - Retool style */
+/* Filter rows */
 #filtersContainer {
   display: flex;
   flex-direction: column;
@@ -82,20 +82,22 @@ header h1 {
 
 .filter-property {
   flex: 1;
-  min-width: 150px;
+  min-width: 180px;
 }
 
-.filter-operator {
-  width: 130px;
+.filter-operator-label {
+  color: #666;
+  font-size: 14px;
+  padding: 0 8px;
+  white-space: nowrap;
 }
 
 .filter-value {
   flex: 1;
-  min-width: 150px;
+  min-width: 180px;
 }
 
-.filter-row input,
-.filter-row select {
+.filter-row input {
   padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
@@ -103,8 +105,7 @@ header h1 {
   background: #fff;
 }
 
-.filter-row input:focus,
-.filter-row select:focus {
+.filter-row input:focus {
   outline: none;
   border-color: #4a6cf7;
 }
@@ -299,13 +300,13 @@ td {
   }
   
   .filter-property,
-  .filter-operator,
   .filter-value {
     flex: 1 1 100%;
     min-width: unset;
   }
   
-  .filter-operator {
+  .filter-operator-label {
     width: 100%;
+    text-align: center;
   }
 }
