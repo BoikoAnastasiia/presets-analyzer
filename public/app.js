@@ -1,11 +1,10 @@
 // State
 let lastResults = null;
 let lastColumns = null;
-let availableProperties = [];
 
 // DOM Elements
-const refreshBtn = document.getElementById('refreshBtn');
 const statusText = document.getElementById('statusText');
+const refreshBtn = document.getElementById('refreshBtn');
 const searchBtn = document.getElementById('searchBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const filtersContainer = document.getElementById('filtersContainer');
@@ -18,7 +17,7 @@ const tableBody = document.getElementById('tableBody');
 const resultCount = document.getElementById('resultCount');
 const previewNote = document.getElementById('previewNote');
 
-// Filter row counter for unique IDs
+// Filter row counter
 let filterCounter = 0;
 
 /**
@@ -30,33 +29,27 @@ function createFilterRow() {
   row.className = 'filter-row';
   row.dataset.filterId = id;
 
-  // Property input with datalist
   const propertyInput = document.createElement('input');
   propertyInput.type = 'text';
   propertyInput.className = 'filter-property';
   propertyInput.placeholder = 'Property name (e.g., src, conrolTitle)';
   propertyInput.setAttribute('list', 'propertiesList');
 
-  // "includes" label
   const includesLabel = document.createElement('span');
   includesLabel.className = 'filter-operator-label';
   includesLabel.textContent = 'includes';
 
-  // Value input
   const valueInput = document.createElement('input');
   valueInput.type = 'text';
   valueInput.className = 'filter-value';
   valueInput.placeholder = 'Value to search for';
 
-  // Remove button
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button';
   removeBtn.className = 'btn btn-remove';
   removeBtn.textContent = '×';
   removeBtn.title = 'Remove filter';
-  removeBtn.addEventListener('click', () => {
-    row.remove();
-  });
+  removeBtn.addEventListener('click', () => row.remove());
 
   row.appendChild(propertyInput);
   row.appendChild(includesLabel);
@@ -106,34 +99,13 @@ function getFilters() {
 function getColumns() {
   const value = columnsInput.value.trim();
   if (!value) return [];
-  
   return value.split(',').map(s => s.trim()).filter(Boolean);
-}
-
-/**
- * Load status and properties
- */
-async function loadStatus() {
-  try {
-    const res = await fetch('/api/status');
-    const data = await res.json();
-    updateStatusDisplay(data);
-    
-    // Store available properties
-    availableProperties = data.properties || [];
-    updatePropertiesDatalist();
-    updateCommonPropertiesHint();
-  } catch (error) {
-    statusText.textContent = 'Error loading status';
-    console.error(error);
-  }
 }
 
 /**
  * Update the datalist with available properties
  */
-function updatePropertiesDatalist() {
-  // Create or update datalist
+function updatePropertiesDatalist(properties) {
   let datalist = document.getElementById('propertiesList');
   if (!datalist) {
     datalist = document.createElement('datalist');
@@ -142,7 +114,7 @@ function updatePropertiesDatalist() {
   }
 
   datalist.innerHTML = '';
-  availableProperties.forEach(prop => {
+  properties.forEach(prop => {
     const option = document.createElement('option');
     option.value = prop;
     datalist.appendChild(option);
@@ -150,44 +122,87 @@ function updatePropertiesDatalist() {
 }
 
 /**
- * Show common properties as hint
+ * Load status from server
  */
-function updateCommonPropertiesHint() {
-  const common = ['fileName', 'conrolTitle', 'controlTitle', 'type', 'className', 'id', 'name', 'src', 'fill', 'isAdditionalMedia'];
-  const available = common.filter(p => availableProperties.includes(p));
-  commonProperties.textContent = available.join(', ');
-}
+async function loadStatus() {
+  statusText.textContent = 'Loading...';
+  
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    
+    if (data.loading) {
+      statusText.textContent = 'Loading data from S3... Please wait.';
+      // Poll until loaded
+      setTimeout(loadStatus, 3000);
+      return;
+    }
 
-function updateStatusDisplay(data) {
-  const date = new Date(data.lastLoaded);
-  const formatted = date.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-  statusText.textContent = `${data.fileCount.toLocaleString()} files | ${data.objectCount.toLocaleString()} objects | Loaded: ${formatted}`;
+    if (data.error) {
+      statusText.textContent = `Error: ${data.error}`;
+      return;
+    }
+
+    if (data.objectCount === 0) {
+      statusText.textContent = 'No data loaded. Click Refresh to load from S3.';
+      return;
+    }
+
+    const date = new Date(data.lastLoaded);
+    const formatted = date.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    statusText.textContent = `${data.fileCount.toLocaleString()} files | ${data.objectCount.toLocaleString()} objects | Loaded: ${formatted}`;
+
+    // Update properties datalist
+    if (data.properties && data.properties.length > 0) {
+      updatePropertiesDatalist(data.properties);
+      const common = ['fileName', 'conrolTitle', 'type', 'className', 'id', 'name', 'src'];
+      const available = common.filter(p => data.properties.includes(p));
+      commonProperties.textContent = available.join(', ');
+    }
+  } catch (error) {
+    console.error('Error loading status:', error);
+    statusText.textContent = 'Error connecting to server';
+  }
 }
 
 /**
- * Refresh data from server
+ * Refresh data from S3
  */
 async function refreshData() {
   refreshBtn.disabled = true;
-  statusText.textContent = 'Refreshing...';
+  statusText.textContent = 'Refreshing data from S3... This may take a few minutes.';
   
   try {
     const res = await fetch('/api/refresh', { method: 'POST' });
     const data = await res.json();
-    updateStatusDisplay(data);
-    
-    availableProperties = data.properties || [];
-    updatePropertiesDatalist();
-    updateCommonPropertiesHint();
+
+    if (data.error) {
+      statusText.textContent = `Error: ${data.error}`;
+      return;
+    }
+
+    const date = new Date(data.lastLoaded);
+    const formatted = date.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    statusText.textContent = `${data.fileCount.toLocaleString()} files | ${data.objectCount.toLocaleString()} objects | Loaded: ${formatted}`;
+
+    if (data.properties) {
+      updatePropertiesDatalist(data.properties);
+    }
   } catch (error) {
+    console.error('Error refreshing:', error);
     statusText.textContent = 'Error refreshing data';
-    console.error(error);
   } finally {
     refreshBtn.disabled = false;
   }
@@ -217,6 +232,12 @@ async function search() {
     });
 
     const data = await res.json();
+
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
+
     lastResults = data.results;
     lastColumns = data.columns;
 
@@ -239,7 +260,6 @@ function displayResults(data) {
 
   resultCount.textContent = `(${count.toLocaleString()} found)`;
 
-  // Clear table
   tableHead.innerHTML = '';
   tableBody.innerHTML = '';
 
@@ -268,13 +288,12 @@ function displayResults(data) {
       const td = document.createElement('td');
       const value = row[col];
       td.textContent = value ?? '';
-      td.title = value ?? ''; // Show full text on hover
+      td.title = value ?? '';
       tr.appendChild(td);
     }
     tableBody.appendChild(tr);
   }
 
-  // Preview note
   if (count > previewLimit) {
     previewNote.textContent = `Showing first ${previewLimit} of ${count.toLocaleString()} results. Download CSV for full data.`;
   } else {
@@ -320,12 +339,10 @@ clearFiltersBtn.addEventListener('click', clearFilters);
 searchBtn.addEventListener('click', search);
 downloadBtn.addEventListener('click', downloadCSV);
 
-// Enter key triggers search in columns input
 columnsInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') search();
 });
 
 // Initialize
-loadStatus();
-// Add one empty filter row by default
 addFilter();
+loadStatus();

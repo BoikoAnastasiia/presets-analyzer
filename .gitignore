@@ -1,2 +1,8 @@
-node_modules
-default_presets_all
+node_modules/
+default_presets_all/
+
+# Environment variables (contains AWS credentials)
+.env
+
+# OS files
+.DS_Store
