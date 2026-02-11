@@ -2,7 +2,11 @@ require('dotenv').config();
 
 const express = require('express');
 const { MongoClient } = require('mongodb');
-const { S3Client, ListObjectsV2Command, GetObjectCommand } = require('@aws-sdk/client-s3');
+const {
+  S3Client,
+  ListObjectsV2Command,
+  GetObjectCommand,
+} = require('@aws-sdk/client-s3');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,12 +19,14 @@ let db;
 const S3_BUCKET = 'gipper-static-assets';
 const S3_PREFIX = 'default_presets_update/';
 
-const s3Client = new S3Client({ 
+const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
-  credentials: process.env.AWS_ACCESS_KEY_ID ? {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-  } : undefined
+  credentials: process.env.AWS_ACCESS_KEY_ID
+    ? {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      }
+    : undefined,
 });
 
 // Middleware
@@ -74,7 +80,7 @@ async function listS3Files() {
     const command = new ListObjectsV2Command({
       Bucket: S3_BUCKET,
       Prefix: S3_PREFIX,
-      ContinuationToken: continuationToken
+      ContinuationToken: continuationToken,
     });
 
     const response = await s3Client.send(command);
@@ -91,12 +97,14 @@ async function listS3Files() {
         files.push({
           key,
           fileName,
-          lastModified: obj.LastModified.toISOString()
+          lastModified: obj.LastModified.toISOString(),
         });
       }
     }
 
-    continuationToken = response.IsTruncated ? response.NextContinuationToken : null;
+    continuationToken = response.IsTruncated
+      ? response.NextContinuationToken
+      : null;
   } while (continuationToken);
 
   return files;
@@ -108,7 +116,7 @@ async function listS3Files() {
 async function downloadFromS3(key) {
   const command = new GetObjectCommand({
     Bucket: S3_BUCKET,
-    Key: key
+    Key: key,
   });
 
   const response = await s3Client.send(command);
@@ -130,7 +138,7 @@ async function syncFromS3() {
 
   // Get existing file metadata from MongoDB
   const existingFiles = await db.collection('fileMetadata').find({}).toArray();
-  const existingMap = new Map(existingFiles.map(f => [f.fileName, f]));
+  const existingMap = new Map(existingFiles.map((f) => [f.fileName, f]));
 
   // Find files to sync
   const filesToSync = [];
@@ -139,7 +147,7 @@ async function syncFromS3() {
   for (const s3File of s3Files) {
     s3FileNames.add(s3File.fileName);
     const existing = existingMap.get(s3File.fileName);
-    
+
     if (!existing || existing.lastModified !== s3File.lastModified) {
       filesToSync.push(s3File);
     }
@@ -147,8 +155,8 @@ async function syncFromS3() {
 
   // Find files to delete (in DB but not in S3)
   const filesToDelete = existingFiles
-    .filter(f => !s3FileNames.has(f.fileName))
-    .map(f => f.fileName);
+    .filter((f) => !s3FileNames.has(f.fileName))
+    .map((f) => f.fileName);
 
   console.log(`Files to sync: ${filesToSync.length}`);
   console.log(`Files to delete: ${filesToDelete.length}`);
@@ -156,8 +164,12 @@ async function syncFromS3() {
 
   // Delete removed files
   if (filesToDelete.length > 0) {
-    await db.collection('objects').deleteMany({ fileName: { $in: filesToDelete } });
-    await db.collection('fileMetadata').deleteMany({ fileName: { $in: filesToDelete } });
+    await db
+      .collection('objects')
+      .deleteMany({ fileName: { $in: filesToDelete } });
+    await db
+      .collection('fileMetadata')
+      .deleteMany({ fileName: { $in: filesToDelete } });
     console.log(`Deleted ${filesToDelete.length} files`);
   }
 
@@ -182,22 +194,24 @@ async function syncFromS3() {
       // Update file metadata
       await db.collection('fileMetadata').updateOne(
         { fileName: file.fileName },
-        { 
-          $set: { 
+        {
+          $set: {
             fileName: file.fileName,
             lastModified: file.lastModified,
             objectCount: objects.length,
-            syncedAt: new Date().toISOString()
-          }
+            syncedAt: new Date().toISOString(),
+          },
         },
-        { upsert: true }
+        { upsert: true },
       );
 
       totalObjects += objects.length;
       processedCount++;
 
       if (processedCount % 100 === 0) {
-        console.log(`Processed ${processedCount}/${filesToSync.length} files...`);
+        console.log(
+          `Processed ${processedCount}/${filesToSync.length} files...`,
+        );
       }
     } catch (error) {
       console.error(`Error processing ${file.fileName}:`, error.message);
@@ -210,14 +224,14 @@ async function syncFromS3() {
 
   await db.collection('metadata').updateOne(
     { _id: 'sync' },
-    { 
-      $set: { 
+    {
+      $set: {
         lastSync: new Date().toISOString(),
         fileCount,
-        objectCount
-      }
+        objectCount,
+      },
     },
-    { upsert: true }
+    { upsert: true },
   );
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -232,11 +246,11 @@ async function syncFromS3() {
 app.get('/api/status', async (req, res) => {
   try {
     const metadata = await db.collection('metadata').findOne({ _id: 'sync' });
-    
+
     res.json({
       fileCount: metadata?.fileCount || 0,
       objectCount: metadata?.objectCount || 0,
-      lastSync: metadata?.lastSync || null
+      lastSync: metadata?.lastSync || null,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -247,11 +261,11 @@ app.get('/api/status', async (req, res) => {
 app.post('/api/sync', async (req, res) => {
   try {
     const result = await syncFromS3();
-    
+
     res.json({
       success: true,
       ...result,
-      lastSync: new Date().toISOString()
+      lastSync: new Date().toISOString(),
     });
   } catch (error) {
     console.error('Sync error:', error);
@@ -266,28 +280,42 @@ app.post('/api/search', async (req, res) => {
 
     // Build MongoDB query from filters
     const query = {};
-    
+
+    // Helper to escape regex special characters
+    const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
     if (filters && filters.length > 0) {
       for (const filter of filters) {
         if (filter.property && filter.value) {
-          // Case-insensitive contains
-          query[filter.property] = { $regex: filter.value, $options: 'i' };
+          const escapedValue = escapeRegex(filter.value);
+          if (filter.operator === 'exact') {
+            // Case-insensitive exact match
+            query[filter.property] = {
+              $regex: `^${escapedValue}$`,
+              $options: 'i',
+            };
+          } else {
+            // Case-insensitive contains (default)
+            query[filter.property] = { $regex: escapedValue, $options: 'i' };
+          }
         }
       }
     }
 
     // Select columns (projection)
-    const selectedColumns = columns && columns.length > 0 
-      ? columns 
-      : ['fileName', 'conrolTitle', 'type', 'className'];
-    
+    const selectedColumns =
+      columns && columns.length > 0
+        ? columns
+        : ['fileName', 'conrolTitle', 'type', 'className'];
+
     const projection = { _id: 0 };
     for (const col of selectedColumns) {
       projection[col] = 1;
     }
 
     // Execute query
-    const results = await db.collection('objects')
+    const results = await db
+      .collection('objects')
       .find(query)
       .project(projection)
       .limit(10000) // Safety limit
@@ -296,7 +324,7 @@ app.post('/api/search', async (req, res) => {
     res.json({
       count: results.length,
       columns: selectedColumns,
-      results
+      results,
     });
   } catch (error) {
     console.error('Search error:', error);
@@ -315,7 +343,9 @@ async function start() {
 
     // Create indexes for faster search
     await db.collection('objects').createIndex({ fileName: 1 });
-    await db.collection('objects').createIndex({ conrolTitle: 'text', type: 'text', className: 'text' });
+    await db
+      .collection('objects')
+      .createIndex({ conrolTitle: 'text', type: 'text', className: 'text' });
     console.log('✓ Indexes created');
 
     // Start server

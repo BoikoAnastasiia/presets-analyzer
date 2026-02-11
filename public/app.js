@@ -35,9 +35,16 @@ function createFilterRow() {
   propertyInput.placeholder = 'Property name (e.g., src, conrolTitle)';
   propertyInput.setAttribute('list', 'propertiesList');
 
-  const includesLabel = document.createElement('span');
-  includesLabel.className = 'filter-operator-label';
-  includesLabel.textContent = 'includes';
+  const operatorSelect = document.createElement('select');
+  operatorSelect.className = 'filter-operator';
+  const includesOption = document.createElement('option');
+  includesOption.value = 'includes';
+  includesOption.textContent = 'includes';
+  const exactOption = document.createElement('option');
+  exactOption.value = 'exact';
+  exactOption.textContent = 'exact';
+  operatorSelect.appendChild(includesOption);
+  operatorSelect.appendChild(exactOption);
 
   const valueInput = document.createElement('input');
   valueInput.type = 'text';
@@ -52,7 +59,7 @@ function createFilterRow() {
   removeBtn.addEventListener('click', () => row.remove());
 
   row.appendChild(propertyInput);
-  row.appendChild(includesLabel);
+  row.appendChild(operatorSelect);
   row.appendChild(valueInput);
   row.appendChild(removeBtn);
 
@@ -83,10 +90,11 @@ function getFilters() {
 
   rows.forEach(row => {
     const property = row.querySelector('.filter-property').value.trim();
+    const operator = row.querySelector('.filter-operator').value;
     const value = row.querySelector('.filter-value').value.trim();
 
     if (property && value) {
-      filters.push({ property, value });
+      filters.push({ property, operator, value });
     }
   });
 

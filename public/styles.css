@@ -85,11 +85,19 @@ header h1 {
   min-width: 180px;
 }
 
-.filter-operator-label {
-  color: #666;
+.filter-operator {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
   font-size: 14px;
-  padding: 0 8px;
-  white-space: nowrap;
+  background: #fff;
+  cursor: pointer;
+  min-width: 100px;
+}
+
+.filter-operator:focus {
+  outline: none;
+  border-color: #4a6cf7;
 }
 
 .filter-value {
@@ -305,8 +313,7 @@ td {
     min-width: unset;
   }
   
-  .filter-operator-label {
-    width: 100%;
-    text-align: center;
+  .filter-operator {
+    flex: 0 0 auto;
   }
 }
