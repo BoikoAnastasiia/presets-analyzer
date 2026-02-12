@@ -283,20 +283,40 @@ app.post('/api/search', async (req, res) => {
 
     // Helper to escape regex special characters
     const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // Helper to parse value (handle booleans and numbers)
+    const parseValue = (val) => {
+      const lower = val.toLowerCase();
+      if (lower === 'true') return true;
+      if (lower === 'false') return false;
+      if (!isNaN(val) && val.trim() !== '') return Number(val);
+      return null; // not a special type
+    };
 
     if (filters && filters.length > 0) {
       for (const filter of filters) {
         if (filter.property && filter.value) {
-          const escapedValue = escapeRegex(filter.value);
+          const parsedValue = parseValue(filter.value);
+          
           if (filter.operator === 'exact') {
-            // Case-insensitive exact match
-            query[filter.property] = {
-              $regex: `^${escapedValue}$`,
-              $options: 'i',
-            };
+            if (parsedValue !== null) {
+              // Boolean or number - exact match
+              query[filter.property] = parsedValue;
+            } else {
+              // String - case-insensitive exact match
+              const escapedValue = escapeRegex(filter.value);
+              query[filter.property] = { $regex: `^${escapedValue}$`, $options: 'i' };
+            }
           } else {
-            // Case-insensitive contains (default)
-            query[filter.property] = { $regex: escapedValue, $options: 'i' };
+            // "includes" operator
+            if (parsedValue !== null) {
+              // Boolean/number - exact match (can't do "includes" on non-strings)
+              query[filter.property] = parsedValue;
+            } else {
+              // String - case-insensitive contains
+              const escapedValue = escapeRegex(filter.value);
+              query[filter.property] = { $regex: escapedValue, $options: 'i' };
+            }
           }
         }
       }
