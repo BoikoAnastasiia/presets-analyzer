@@ -146,41 +146,60 @@ async function loadStatus() {
 }
 
 /**
- * Sync data from S3 to MongoDB
+ * Sync data from S3 to MongoDB with live progress
  */
 async function syncData() {
   refreshBtn.disabled = true;
   refreshBtn.textContent = '⏳ Syncing...';
-  statusText.textContent = 'Syncing from S3... This may take several minutes for initial sync.';
+  statusText.textContent = 'Starting sync...';
   
   try {
-    const res = await fetch('/api/sync', { method: 'POST' });
-    const data = await res.json();
-
-    if (data.error) {
-      statusText.textContent = `Error: ${data.error}`;
-      return;
-    }
-
-    const date = new Date(data.lastSync);
-    const formatted = date.toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    statusText.textContent = `${data.fileCount.toLocaleString()} files | ${data.objectCount.toLocaleString()} objects | Last sync: ${formatted}`;
+    const eventSource = new EventSource('/api/sync');
     
-    if (data.processedCount > 0) {
-      alert(`Sync complete!\n\nProcessed: ${data.processedCount} files\nNew objects: ${data.totalObjects}\nTotal in DB: ${data.objectCount}`);
-    } else {
-      alert('Sync complete! No changes detected.');
-    }
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      
+      if (data.stage === 'done') {
+        eventSource.close();
+        
+        const date = new Date(data.lastSync);
+        const formatted = date.toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        statusText.textContent = `${data.fileCount.toLocaleString()} files | ${data.objectCount.toLocaleString()} objects | Last sync: ${formatted}`;
+        
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = '🔄 Sync from S3';
+        
+        if (data.processedCount > 0) {
+          alert(`Sync complete!\n\nProcessed: ${data.processedCount} files\nNew objects: ${data.totalObjects}\nTotal in DB: ${data.objectCount}`);
+        } else {
+          alert('Sync complete! No changes detected.');
+        }
+      } else if (data.stage === 'error') {
+        eventSource.close();
+        statusText.textContent = `Error: ${data.error}`;
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = '🔄 Sync from S3';
+      } else {
+        // Progress update
+        statusText.textContent = data.message;
+      }
+    };
+    
+    eventSource.onerror = () => {
+      eventSource.close();
+      statusText.textContent = 'Sync connection lost. Refresh to check status.';
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = '🔄 Sync from S3';
+    };
   } catch (error) {
     console.error('Error syncing:', error);
     statusText.textContent = 'Error syncing data';
-  } finally {
     refreshBtn.disabled = false;
     refreshBtn.textContent = '🔄 Sync from S3';
   }

@@ -126,15 +126,18 @@ async function downloadFromS3(key) {
 
 /**
  * Sync from S3 to MongoDB (incremental)
+ * @param {function} onProgress - callback for progress updates
  */
-async function syncFromS3() {
+async function syncFromS3(onProgress = () => {}) {
   console.log('=== Starting S3 to MongoDB Sync ===');
   const startTime = Date.now();
 
   // Get S3 files
+  onProgress({ stage: 'listing', message: 'Listing S3 files...' });
   console.log('Listing S3 files...');
   const s3Files = await listS3Files();
   console.log(`Found ${s3Files.length} files in S3`);
+  onProgress({ stage: 'listing', message: `Found ${s3Files.length} files in S3` });
 
   // Get existing file metadata from MongoDB
   const existingFiles = await db.collection('fileMetadata').find({}).toArray();
@@ -161,6 +164,11 @@ async function syncFromS3() {
   console.log(`Files to sync: ${filesToSync.length}`);
   console.log(`Files to delete: ${filesToDelete.length}`);
   console.log(`Files unchanged: ${s3Files.length - filesToSync.length}`);
+  
+  onProgress({ 
+    stage: 'analyzing', 
+    message: `Files to sync: ${filesToSync.length} | Unchanged: ${s3Files.length - filesToSync.length} | To delete: ${filesToDelete.length}` 
+  });
 
   // Delete removed files
   if (filesToDelete.length > 0) {
@@ -208,10 +216,16 @@ async function syncFromS3() {
       totalObjects += objects.length;
       processedCount++;
 
-      if (processedCount % 100 === 0) {
-        console.log(
-          `Processed ${processedCount}/${filesToSync.length} files...`,
-        );
+      // Send progress update every 10 files or on last file
+      if (processedCount % 10 === 0 || processedCount === filesToSync.length) {
+        const pct = Math.round((processedCount / filesToSync.length) * 100);
+        onProgress({ 
+          stage: 'syncing', 
+          message: `Syncing: ${processedCount}/${filesToSync.length} files (${pct}%)`,
+          processed: processedCount,
+          total: filesToSync.length
+        });
+        console.log(`Processed ${processedCount}/${filesToSync.length} files...`);
       }
     } catch (error) {
       console.error(`Error processing ${file.fileName}:`, error.message);
@@ -238,6 +252,12 @@ async function syncFromS3() {
   console.log(`\n✓ Sync complete in ${elapsed}s`);
   console.log(`  Processed: ${processedCount} files, ${totalObjects} objects`);
   console.log(`  Total in DB: ${fileCount} files, ${objectCount} objects`);
+  
+  onProgress({ 
+    stage: 'complete', 
+    message: `✓ Sync complete in ${elapsed}s - ${processedCount} files processed`,
+    elapsed
+  });
 
   return { processedCount, totalObjects, fileCount, objectCount };
 }
@@ -257,7 +277,38 @@ app.get('/api/status', async (req, res) => {
   }
 });
 
-// API: Sync from S3
+// API: Sync from S3 with Server-Sent Events for progress
+app.get('/api/sync', async (req, res) => {
+  // Set up SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const sendEvent = (data) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const result = await syncFromS3((progress) => {
+      sendEvent(progress);
+    });
+
+    sendEvent({
+      stage: 'done',
+      success: true,
+      ...result,
+      lastSync: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Sync error:', error);
+    sendEvent({ stage: 'error', error: error.message });
+  } finally {
+    res.end();
+  }
+});
+
+// Keep POST for backward compatibility
 app.post('/api/sync', async (req, res) => {
   try {
     const result = await syncFromS3();
